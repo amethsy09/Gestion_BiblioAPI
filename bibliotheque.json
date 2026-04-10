@@ -1,0 +1,10 @@
+{
+  "livres": [
+    {
+      "isbn": "9782070360248",
+      "titre": "Le Petit Prince",
+      "auteur": "Antoine de Saint-Exupery",
+      "disponible": false
+    }
+  ]
+}
