@@ -1,0 +1,43 @@
+services:
+  db:
+    image: postgres:16
+    container_name: biblio_db
+    environment:
+      POSTGRES_DB: biblio
+      POSTGRES_USER: biblio_user
+      POSTGRES_PASSWORD: biblio_pass
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - biblio_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U biblio_user -d biblio"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    container_name: fastapi_biblio
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8001:8001"
+    environment:
+      DATABASE_URL: postgresql://biblio_user:biblio_pass@db:5432/biblio
+    volumes:
+      - .:/Gestion_BiblioAPI
+    networks:
+      - biblio_network
+    command: uvicorn app.api:app --host 0.0.0.0 --port 8001
+
+volumes:
+  pgdata:
+
+networks:
+  biblio_network:
+    driver: bridge
