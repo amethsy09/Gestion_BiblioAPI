@@ -44,7 +44,13 @@ def racine():
             "recherche": "/livres/recherche?q={texte}"
         }
     }
-
+@app.get("/health", tags=["Santé"], summary="Health check")
+def health_check():
+    try:
+        storage._connect()  # vérifie que la DB est joignable
+        return {"status": "healthy", "database": "connected"}
+    except Exception as e:
+        raise HTTPException(status_code=503, detail={"status": "unhealthy", "error": str(e)})
 
 @app.get(
     "/livres",
