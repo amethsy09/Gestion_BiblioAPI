@@ -19,7 +19,7 @@ services:
       retries: 5
 
   api:
-    build: .
+    image: ahmadshema/biblio-api:${IMAGE_TAG}
     container_name: fastapi_biblio
     restart: always
     depends_on:
@@ -29,11 +29,9 @@ services:
       - "8000:8001"
     environment:
       DATABASE_URL: postgresql://biblio_user:biblio_pass@db:5432/biblio
-    volumes:
-      - .:/Gestion_BiblioAPI
     networks:
       - biblio_network
-    # command: uvicorn app.api:app --host 0.0.0.0 --port 8001
+    command: uvicorn app.api:app --host 0.0.0.0 --port 8001
 
 volumes:
   pgdata:
