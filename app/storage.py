@@ -16,8 +16,27 @@ class StorageError(Exception):
 class BibliothequeStorage:
     def __init__(self, _json_path: str = None):
         self._lock = Lock()
-        self._db_url = os.getenv("DATABASE_URL")
+        self._db_url = self._build_db_url()
         self._init_db()
+
+    def _build_db_url(self) -> str:
+        db_url = os.getenv("DATABASE_URL")
+        if db_url:
+            return db_url
+
+        db_name = os.getenv("POSTGRES_DB") or os.getenv("DATABASE_NAME")
+        db_user = os.getenv("POSTGRES_USER") or os.getenv("DATABASE_USER")
+        db_password = os.getenv("POSTGRES_PASSWORD") or os.getenv("DATABASE_PASSWORD")
+        db_host = os.getenv("DATABASE_HOST") or os.getenv("POSTGRES_HOST") or "db"
+        db_port = os.getenv("DATABASE_PORT") or os.getenv("POSTGRES_PORT") or "5432"
+
+        if db_name and db_user and db_password:
+            return f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+
+        raise StorageError(
+            "DATABASE_URL n'est pas défini. Veuillez définir DATABASE_URL ou les variables "
+            "POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD et DATABASE_HOST."
+        )
 
     # ── connexion ──────────────────────────────────────────────────────────────
 

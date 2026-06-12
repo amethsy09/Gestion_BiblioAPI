@@ -56,12 +56,26 @@ jobs:
               | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
             echo " Pull de la nouvelle image…"
-            docker compose pull api
+            docker compose pull api || true
 
-            echo " Redémarrage de l'API (DB conservée)…"
+            echo " Démarrage/reprise du service db si nécessaire…"
+            docker compose up -d db || true
+
+            echo " Attente que la base de donnees soit healthy (max 60s)..."
+            for i in $(seq 1 20); do
+              DB_STATUS=$(docker inspect --format='{{.State.Health.Status}}' biblio_db 2>/dev/null || echo "missing")
+              echo "  Tentative $i/20 — db status: $DB_STATUS"
+              if [ "$DB_STATUS" = "healthy" ]; then
+                echo " DB healthy."
+                break
+              fi
+              sleep 3
+            done
+
+            echo " Redemarrage de l'API (recreation)..."
             docker compose up -d --no-deps --force-recreate api
 
-            echo " Conteneur api redémarré."
+            echo " Conteneurs demarres."
 
       # ── Health check via la route /health ──────────────────────────
       - name: Health check → /health
