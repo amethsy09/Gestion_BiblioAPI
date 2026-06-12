@@ -61,16 +61,15 @@ jobs:
             # Taguer l'image publiee sous le nom utilise dans docker-compose.yml
             docker tag "$PUBLISHED_IMAGE" ahmadshema/biblio-api:latest || true
 
-
-            echo " Démarrage/reprise du service db si nécessaire…"
-            docker compose up -d db || true
+            echo "  Démarrage/reprise du service db si nécessaire…"
+            docker compose up -d db
 
             echo " Attente que la base de donnees soit healthy (max 60s)..."
             for i in $(seq 1 20); do
               DB_STATUS=$(docker inspect --format='{{.State.Health.Status}}' biblio_db 2>/dev/null || echo "missing")
               echo "  Tentative $i/20 — db status: $DB_STATUS"
               if [ "$DB_STATUS" = "healthy" ]; then
-                echo " DB healthy."
+                echo "DB healthy."
                 break
               fi
               sleep 3
@@ -79,7 +78,7 @@ jobs:
             echo " Redemarrage de l'API (recreation)..."
             docker compose up -d --no-deps --force-recreate api
 
-            echo " Conteneurs demarres."
+            echo "Conteneurs demarres."
 
       # ── Health check via la route /health ──────────────────────────
       - name: Health check → /health
@@ -94,15 +93,16 @@ jobs:
             WAIT_SECONDS=6
             # port 8000 = port exposé sur l'hôte (8000:8001 dans compose)
             APP_PORT=8000
+            CONTAINER_NAME="fastapi_biblio"
 
-            echo "⏳ Attente que /health réponde 200…"
+            echo "Attente que /health réponde 200…"
             for i in $(seq 1 $MAX_RETRIES); do
 
               # Vérification que le conteneur tourne encore
-              STATUS=$(docker inspect --format='{{.State.Status}}' fastapi_biblio 2>/dev/null || echo "missing")
+              STATUS=$(docker inspect --format='{{.State.Status}}' $CONTAINER_NAME 2>/dev/null || echo "missing")
               if [ "$STATUS" != "running" ]; then
-                echo " Conteneur arrêté (status: $STATUS). Logs :"
-                docker logs --tail 50 fastapi_biblio 2>&1 || true
+                echo "Conteneur arrêté (status: $STATUS). Logs :"
+                docker logs --tail 50 $CONTAINER_NAME 2>&1 || true
                 exit 1
               fi
 
@@ -121,7 +121,7 @@ jobs:
               if [ "$HTTP_CODE" = "503" ]; then
                 echo " App unhealthy (DB inaccessible). Réponse :"
                 cat /tmp/health_body.json
-                docker logs --tail 50 fastapi_biblio 2>&1 || true
+                docker logs --tail 50 $CONTAINER_NAME 2>&1 || true
                 exit 1
               fi
 
@@ -129,7 +129,7 @@ jobs:
             done
 
             echo " Timeout : /health n'a pas répondu après $(($MAX_RETRIES * $WAIT_SECONDS))s."
-            docker logs --tail 50 fastapi_biblio 2>&1 || true
+            docker logs --tail 50 $CONTAINER_NAME 2>&1 || true
             exit 1
 
   # ─────────────────────────────────────────

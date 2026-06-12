@@ -33,7 +33,7 @@ services:
       - .:/Gestion_BiblioAPI
     networks:
       - biblio_network
-    command: uvicorn app.api:app --host 0.0.0.0 --port 8001
+    # command: uvicorn app.api:app --host 0.0.0.0 --port 8001
 
 volumes:
   pgdata:
