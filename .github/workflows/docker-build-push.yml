@@ -6,6 +6,9 @@ on:
       - main
 
 jobs:
+  # ─────────────────────────────────────────
+  # JOB 1 : Build & Push vers DockerHub
+  # ─────────────────────────────────────────
   build-and-push:
     runs-on: ubuntu-latest
 
@@ -25,9 +28,12 @@ jobs:
           context: .
           push: true
           tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/biblio-api:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/biblio-api:${{ github.sha }}
 
-
+  # ─────────────────────────────────────────
+  # JOB 2 : Déploiement sur le serveur
+  # ─────────────────────────────────────────
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
@@ -47,25 +53,90 @@ jobs:
 
             cd ~/biblio-api
 
-            echo "Login DockerHub..."
+            echo " Login DockerHub..."
             echo "${{ secrets.DOCKERHUB_TOKEN }}" \
               | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
+            export IMAGE_TAG="${{ github.sha }}"
             IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/biblio-api:${{ github.sha }}"
 
-            echo "Pull image: $IMAGE"
+            echo " Pull image: $IMAGE"
             docker pull "$IMAGE"
 
-            echo "Update docker-compose image tag"
+            echo " Update docker-compose image tag"
             sed -i "s|image: .*biblio-api.*|image: $IMAGE|g" docker-compose.yml
 
-            echo "Restart stack"
+            echo " Restart stack"
             docker compose down
             docker compose up -d db
-            sleep 5
+
+            echo " Attente que la DB soit healthy..."
+            for i in $(seq 1 15); do
+              DB_STATUS=$(docker inspect --format='{{.State.Health.Status}}' biblio_db 2>/dev/null || echo "unknown")
+              if [ "$DB_STATUS" = "healthy" ]; then
+                echo " DB healthy"
+                break
+              fi
+              echo "  DB status: $DB_STATUS ($i/15)"
+              sleep 2
+            done
+
             docker compose up -d api
+            echo " Conteneurs démarrés."
 
+      # ── Health check via la route /health, avec attente du démarrage ──
+      - name: Health check → /health
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            APP_PORT=8000
+            MAX_RETRIES=15
+            WAIT_SECONDS=4
 
+            echo " Attente que /health réponde 200..."
+            for i in $(seq 1 $MAX_RETRIES); do
+
+              # Vérifie que le conteneur tourne toujours
+              STATUS=$(docker inspect --format='{{.State.Status}}' fastapi_biblio 2>/dev/null || echo "missing")
+              if [ "$STATUS" != "running" ]; then
+                echo " Conteneur arrêté (status: $STATUS). Logs :"
+                docker logs --tail 80 fastapi_biblio 2>&1 || true
+                exit 1
+              fi
+
+              HTTP_CODE=$(curl -s -o /tmp/health_body.json -w "%{http_code}" \
+                http://localhost:$APP_PORT/health 2>/dev/null || echo "000")
+
+              echo "  Tentative $i/$MAX_RETRIES — HTTP $HTTP_CODE"
+
+              if [ "$HTTP_CODE" = "200" ]; then
+                echo " App healthy ! Réponse :"
+                cat /tmp/health_body.json
+                exit 0
+              fi
+
+              if [ "$HTTP_CODE" = "503" ]; then
+                echo " App unhealthy (DB inaccessible). Réponse :"
+                cat /tmp/health_body.json
+                docker logs --tail 80 fastapi_biblio 2>&1 || true
+                exit 1
+              fi
+
+              # HTTP_CODE = 000 → app pas encore prête, on retente
+              sleep $WAIT_SECONDS
+            done
+
+            echo " Timeout : /health n'a pas répondu 200 après $(($MAX_RETRIES * $WAIT_SECONDS))s."
+            docker logs --tail 80 fastapi_biblio 2>&1 || true
+            exit 1
+
+  # ─────────────────────────────────────────
+  # JOB 3 : Notifications
+  # ─────────────────────────────────────────
   notify:
     name: Notify
     runs-on: ubuntu-latest
@@ -86,6 +157,24 @@ jobs:
           from: GitHub Actions <${{ secrets.MAIL_USERNAME }}>
           body: |
             Deployment failed.
+
+            Branch: ${{ github.ref_name }}
+            Commit: ${{ github.sha }}
+            Logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Email success
+        if: needs.deploy.result == 'success'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "[biblio-api] Deployment success — ${{ github.sha }}"
+          to: ${{ secrets.MAIL_RECIPIENT }}
+          from: GitHub Actions <${{ secrets.MAIL_USERNAME }}>
+          body: |
+            Deployment succeeded 
 
             Branch: ${{ github.ref_name }}
             Commit: ${{ github.sha }}
