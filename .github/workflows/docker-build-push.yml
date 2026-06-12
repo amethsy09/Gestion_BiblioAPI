@@ -55,8 +55,12 @@ jobs:
             echo "${{ secrets.DOCKERHUB_TOKEN }}" \
               | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
-            echo " Pull de la nouvelle image…"
-            docker compose pull api || true
+            echo " Pull de la nouvelle image publiee par CI..."
+            PUBLISHED_IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/biblio-api:latest"
+            docker pull "$PUBLISHED_IMAGE" || true
+            # Taguer l'image publiee sous le nom utilise dans docker-compose.yml
+            docker tag "$PUBLISHED_IMAGE" ahmadshema/biblio-api:latest || true
+
 
             echo " Démarrage/reprise du service db si nécessaire…"
             docker compose up -d db || true
